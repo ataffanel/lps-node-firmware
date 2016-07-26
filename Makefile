@@ -15,7 +15,6 @@ else
 $(error Rev.$(REV) unknown)
 endif
 
-CFLAGS += -fdiagnostics-color=always
 
 INCLUDES=-Iinc -Iinc/$(CPU) -I$(HAL_ROOT)/Inc -IMiddlewares/ST/STM32_USB_Device_Library/Class/CDC/Inc -IMiddlewares/ST/STM32_USB_Device_Library/Core/Inc
 
@@ -29,7 +28,7 @@ OBJS+=src/main.o
 OBJS+=src/usb_device.o src/usbd_cdc_if.o src/usbd_desc.o src/lps25h.o src/led.o
 OBJS+=src/cfg.o src/usbcomm.o src/test_support.o src/production_test.o src/statemachine_tdoa.o
 
-HALS+=gpio rcc cortex i2c pcd dma pcd_ex rcc_ex spi uart tim
+HALS+=gpio rcc cortex i2c pcd dma pcd_ex rcc_ex spi uart tim tim_ex
 OBJS+=$(foreach mod, $(HALS), $(HAL_ROOT)/Src/stm32$(CPU)xx_hal_$(mod).o)
 OBJS+=$(HAL_ROOT)/Src/stm32$(CPU)xx_hal.o
 

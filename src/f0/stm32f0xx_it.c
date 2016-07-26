@@ -183,5 +183,12 @@ void printHardFault(unsigned int* hardfault_args)
   }
 }
 
+extern TIM_HandleTypeDef htim2;
+
+void TIM2_IRQHandler(void)
+{
+  HAL_TIM_IRQHandler(&htim2);
+}
+
 /* USER CODE END 1 */
 /************************ (C) COPYRIGHT STMicroelectronics *****END OF FILE****/

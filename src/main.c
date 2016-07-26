@@ -47,6 +47,7 @@
 #include "lps25h.h"
 #include "test_support.h"
 #include "production_test.h"
+#include "statemachine.h"
 
 static CfgMode mode = modeAnchor;
 
@@ -119,10 +120,6 @@ bool contains(int* list, int length, int value)
   }
 
   return false;
-}
-
-void stateMachineStep(dwDevice_t *uwb, bool receivedFlag, bool receiveFailedFlag, bool transmitedFlag) {
-  ;
 }
 
 dwDevice_t dwm_device;
@@ -279,15 +276,15 @@ int main() {
       handleInput(ch);
     }
 
-    stateMachineStep(dwm, receivedFlag, receiveFailedFlag, transmitedFlag);
-
+    StateMachineStep(receivedFlag, receiveFailedFlag, transmitedFlag);
+    
     // Handling of the LEDs
     if (HAL_GetTick() > (ledTick+250)) {
       ledTick = HAL_GetTick();
       ledState = !ledState;
     }
 
-     ledOff(ledSync);
+     //ledOff(ledSync);
 
      switch (mode) {
        case modeTag:

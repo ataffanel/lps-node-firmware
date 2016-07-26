@@ -23,6 +23,7 @@
  * along with the LPS Firmware.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include <stdio.h>
 #include <assert.h>
 #include <string.h>
 #include <math.h>
@@ -50,7 +51,6 @@ extern dwDevice_t *dwm;
 #define UWB_ReceivedPacketLength() dwGetDataLength(dwm)
 
 #define UWB_ReceivedPacketData(rxPacket, packetLength) dwGetData(dwm, rxPacket, packetLength)
-
 
 static uint64_t UWB_LocalTime() {
   uint64_t timestamp = 0;
@@ -84,7 +84,7 @@ static void setBit(uint8_t data[], unsigned int n, unsigned int bit, bool val) {
 }
 
 static bool UWB_ScheduleMessage(uint64_t txTime, uint8_t *packet, uint8_t packetLength) {
-	setBit(dwm->sysctrl, LEN_SYS_CTRL, TXDLYS_BIT, true);
+  setBit(dwm->sysctrl, LEN_SYS_CTRL, TXDLYS_BIT, true);
   dwSpiWrite(dwm, DX_TIME, NO_SUB, &txTime, LEN_DX_TIME);
 
   dwNewTransmit(dwm);
@@ -130,7 +130,7 @@ uint8_t boardID; //the anchor ID, read from the GPIO pins
 uint16_t boardPacketID;
 uint8_t rangingPartner;
 
-int64_t nextTransmit_st;
+double nextTransmit_st;
 int64_t nextTransmit_lt;
 
 void StateEntry(bool rxgood, bool rxerror, bool txgood) {
@@ -217,7 +217,7 @@ void StateRXGood(bool rxgood, bool rxerror, bool txgood)
   UWB_RXEnable();
 
   // process the packet
-  ProcessReceivedPacket(&rxPacket, &rxTime);
+  //ProcessReceivedPacket(&rxPacket, &rxTime);
 
   // transition states
   if (rxgood) { // if we've received a packet while processing, then come right back here!
@@ -240,11 +240,10 @@ void StateTX(bool rxgood, bool rxerror, bool txgood) {
   txPacket.y = my->y;
   txPacket.z = my->z;
   txPacket.positionInitialized = my->positionInitialized;
-
   // update the partners
   for(uint8_t i = 0; i<APP_ANCHOR_COUNT; i++) {
     uint8_t testPartner = (uint8_t)((rangingPartner + i) % APP_ANCHOR_COUNT);
-    
+
     if (testPartner == boardID) {
       continue; // don't retransmit our own packets
     }
@@ -294,12 +293,13 @@ void StateTXWait(bool rxgood, bool rxerror, bool txgood) {
 
 void StateTXGood(bool rxgood, bool rxerror, bool txgood) {
   // save the sent packet in the packet log
+  //printf("TX Good");
   PacketLogEntry_t packetLog;
   packetLog.senderID = txPacket.senderID;
   packetLog.packetID = txPacket.packetID;
   packetLog.txTime = txPacket.txTime;
   packetLog.rxTime = 0;
-  
+
   int8_t frontIdx = (my->packetHistoryFrontIdx + 1)%APP_PACKET_HISTORY;
   memcpy(&my->packetHistory[frontIdx], &packetLog, sizeof(PacketLogEntry_t));
   my->packetHistoryFrontIdx = frontIdx;
@@ -319,14 +319,14 @@ void StateRXError(bool rxgood, bool rxerror, bool txgood) {
 
 
 void StateTXError(bool rxgood, bool rxerror, bool txgood) {
-//	VCP_WriteString("TX Error");
+  //printf("TX Error");
   LED_Register_ERROR();
   nextState = RXMODE;
 }
 
 
 void StateTXTimeout(bool rxgood, bool rxerror, bool txgood) {
-//	VCP_WriteString("TX Timeout");
+  //printf("TX Timeout");
   LED_Register_ERROR();
   nextState = RXMODE;
 }
@@ -340,11 +340,11 @@ void StateMachineStep(bool rxgood, bool rxerror, bool txgood)
     {
       boardID = address[0] - 1;
       assert(boardID >= 0 && boardID < APP_ANCHOR_COUNT);
-    
+
       memset(localData, 0, sizeof(localData));
-      
+
       my = &localData[boardID];
-      
+
       // initialize the locally stored anchor data
       for(int i=0; i<APP_ANCHOR_COUNT; i++)
       {
@@ -359,21 +359,21 @@ void StateMachineStep(bool rxgood, bool rxerror, bool txgood)
         anchor->X[0] = 0; // offset
         anchor->X[1] = 1; // rate
         anchor->ticksDistance = 0;
-  
+
         if (i==boardID) {
           continue; // no need to compute ticksDistance
         }
-        
+
         float distance = sqrtf(powf(my->x-anchor->x, 2) + powf(my->y-anchor->y, 2) + powf(my->z-anchor->z, 2));
         anchor->ticksDistance = (uint32_t)(TICKS_PER_METER * distance + RFDELAY);
       }
-      
+
       firstEntry = false;
     }
-    
+
     lastState = currentState;
     currentState = nextState;
-    
+
     StateFunction[currentState](rxgood, rxerror, txgood);
   }
 }
