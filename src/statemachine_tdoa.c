@@ -28,6 +28,12 @@
 #include "dw1000.h"
 #include "libdw1000Spi.h"
 
+// Disabling the LEDs
+#define LED_Register_RX()
+#define LED_Register_TX()
+#define LED_Register_ERROR()
+#define LED_Register_ALERT()
+
 extern dwDevice_t *dwm;
 
 #define UWB_RXEnable() dwNewReceive(dwm); \
@@ -83,7 +89,7 @@ static bool UWB_ScheduleMessage(uint64_t txTime, uint8_t *packet, uint8_t packet
   dwStartTransmit(dwm);
 
   uint8_t data;
-  dwSpiRead(dwm, SYS_STATUS_ID, 3, &data, 1);
+  dwSpiRead(dwm, SYS_STATUS, 3, &data, 1);
   bool HPDWARN = (data & 0x08) != 0;
   if (HPDWARN) {
     dwIdle(dwm);
@@ -101,8 +107,8 @@ State_t RXMODE = STATE_RXLISTEN; // Holds the nextState for any states returning
 void (*StateFunction[NUM_STATES])(bool rxgood, bool rxerror, bool txgood) =
     { StateEntry,
       StateRXListen, StateRX, StateRXGood, StateRXError,
-      StateTX, StateTXWait, StateTXGood, StateTXError, StateTXTimeout,
-      StateFatal };
+      StateTX, StateTXWait, StateTXGood, StateTXError, StateTXTimeout
+    };
 
 // Defines to handle entry and exit conditions
 #define ENTRY if(lastState != currentState)
@@ -311,12 +317,6 @@ void StateTXTimeout(bool rxgood, bool rxerror, bool txgood) {
   nextState = RXMODE;
 }
 
-
-void StateFatal(bool rxgood, bool rxerror, bool txgood) {
-  PANIC();
-}
-
-
 void StateMachineStep(bool rxgood, bool rxerror, bool txgood) {
   static bool firstEntry = true;
   if (firstEntry) {
@@ -324,7 +324,7 @@ void StateMachineStep(bool rxgood, bool rxerror, bool txgood) {
     my = &localData[boardID];
     firstEntry = false;
   }
-  
+
   lastState = currentState;
   currentState = nextState;
 

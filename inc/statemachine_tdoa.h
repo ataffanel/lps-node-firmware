@@ -62,7 +62,6 @@ typedef enum {
   STATE_ENTRY,
   STATE_RXLISTEN, STATE_RX, STATE_RXGOOD, STATE_RXERROR,
   STATE_TX, STATE_TXWAIT, STATE_TXGOOD, STATE_TXERROR, STATE_TXTIMEOUT,
-  STATE_FATAL,
   NUM_STATES
 } State_t;
 
@@ -85,8 +84,6 @@ void StateTXGood(bool rxgood, bool rxerror, bool txgood);
 void StateTXError(bool rxgood, bool rxerror, bool txgood);
 
 void StateTXTimeout(bool rxgood, bool rxerror, bool txgood);
-
-void StateFatal(bool rxgood, bool rxerror, bool txgood);
 
 //--------------- Data Defintions ---------------//
 
