@@ -58,6 +58,16 @@ int initDwm1000();
 uint8_t address[] = {0,0,0,0,0,0,0xcf,0xbc};
 uint8_t base_address[] = {0,0,0,0,0,0,0xcf,0xbc};
 
+float position[N_NODES][3] = {
+  {0,0,0},
+  {4,0,0},
+  {0,5,0},
+  {0.1f,6.98f,2.60f},
+  {5.30f, 1.70f, 2.20f},
+  {0.2f,-3.96f,2.60f},
+  {4.00,  5.00,  0.00},
+}
+
 // Static system configuration
 #define MAX_ANCHORS 6
 uint8_t anchors[MAX_ANCHORS];
