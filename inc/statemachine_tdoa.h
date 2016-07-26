@@ -41,8 +41,10 @@
 #define APP_TRANSMIT_BUFFER_MAX_s (1.25e-3f) // maximum time before transmission that an anchor can schedule an update. Should be less than the transmit period to avoid missing packets
 #define APP_TRANSMIT_BUFFER_MIN_s (0.3e-3f) // minimum time before transmission that an anchor can schedule an update. Should be at least a few hundred microseconds, to allow for processing time.
 #define APP_SLICE_LENGTH_s (APP_TRANSMIT_PERIOD_s * APP_ANCHOR_COUNT) // total round time of the system (time between a single anchor transmitting)
+
 #define APP_MIN_PACKET_TX (1000) // how many packets do we need from id=0 before we start transmitting?
 #define APP_MIN_PACKET_SYNC (800) // how many packets do we need from them before we start incorporating their clock into the system clock?
+
 //--------------- Estimator Constants ---------------//
 
 #define DISTANCE_STEP_MAX (0.0001f)
@@ -54,6 +56,7 @@
 #define CLOCK_VAL_SS_VAR (7.358604e-06) // The steady state (calculated using the above two variances) variance of the clock's value after measurement update (P^\inf_m[0,0])
 #define CLOCK_RATE_SS_VAR (1.636265e-03) // The steady state (calculated using the above two variances) variance of the clock's rate after measurement update (P^\inf_m[1,1])
 
+//--------------- State Machine Definitions ---------------//
 
 typedef enum {
   STATE_ENTRY,
@@ -84,3 +87,55 @@ void StateTXError(bool rxgood, bool rxerror, bool txgood);
 void StateTXTimeout(bool rxgood, bool rxerror, bool txgood);
 
 void StateFatal(bool rxgood, bool rxerror, bool txgood);
+
+//--------------- Data Defintions ---------------//
+
+typedef struct {
+  uint8_t senderID;
+  uint16_t packetID;
+  int64_t rxTime;
+  int64_t txTime;
+  int64_t sysTxTime;
+} PacketLogEntry_t;
+
+typedef struct {
+  uint64_t packetCount;
+  uint32_t ticksDistance;
+  double systemSkew;
+  int64_t systemOffset;
+  double X[3];
+  float x, y, z;
+  bool fixedX, fixedY, fixedZ;
+  bool positionInitialized;
+  PacketLogEntry_t packetHistory[APP_PACKET_HISTORY];
+  uint8_t packetHistoryFrontIdx;
+} AnchorInformation_t;
+
+typedef struct __attribute__((__packed__)) {
+  uint8_t senderID;
+  uint16_t packetID;
+	int64_t rxTime;
+} PacketRXData_t;
+
+typedef struct __attribute__((__packed__)) { // note the order of fields here is to minimize the amount of data that a TDOA client needs to read
+  int64_t sysTxTime;        // ---
+  float x, y, z;            //  | Needed for TDOA localization (and anchor sync & positioning)
+  bool positionInitialized; // ---
+  uint8_t senderID;         // ---
+  uint16_t packetID;        //  |
+  double systemSkew;        //  | Not needed for TDOA localization, but needed for anchor sync and anchor positioning
+  int64_t systemOffset;     //  |
+  PacketRXData_t rxPacket;  // ---
+} Packet_t;
+
+
+//--------------- SHARED DATA -----------------//
+
+extern Packet_t txPacket;
+extern Packet_t rxPacket;
+
+extern AnchorInformation_t localData[APP_ANCHOR_COUNT+1]; // +1 for boardID starting from 1...
+extern AnchorInformation_t *my;
+
+extern uint8_t boardID; //the anchor ID, read from the GPIO pins
+extern uint16_t boardPacketID;

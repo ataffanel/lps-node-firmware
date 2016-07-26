@@ -39,6 +39,8 @@ extern dwDevice_t *dwm;
 #define UWB_ReceivedPacketLength() dwGetDataLength(dwm)
 
 #define UWB_ReceivedPacketData(rxPacket, packetLength) dwGetData(dwm, rxPacket, packetLength)
+#include "stopwatch.h"
+#include "config.h"
 
 static uint64_t UWB_LocalTime() {
   uint64_t timestamp = 0;
@@ -106,11 +108,20 @@ void (*StateFunction[NUM_STATES])(bool rxgood, bool rxerror, bool txgood) =
 #define ENTRY if(lastState != currentState)
 #define EXIT if(nextState != currentState)
 
-sysTime_t stateMachineStart;
+// State machine globals
+
+Packet_t txPacket;
+Packet_t rxPacket;
+
+AnchorInformation_t localData[APP_ANCHOR_COUNT];
+AnchorInformation_t *my;
+
+uint8_t boardID; //the anchor ID, read from the GPIO pins
+uint16_t boardPacketID;
+
 bool stateMachineListenOnly;
 
 void StateEntry(bool rxgood, bool rxerror, bool txgood) {
-  stateMachineStart = STOPWATCH_GetTicks();
   stateMachineListenOnly = true;
 
   RXMODE = STATE_RXLISTEN;
@@ -123,7 +134,7 @@ void StateRXListen(bool rxgood, bool rxerror, bool txgood) { // listen until the
     UWB_RXEnable();
   }
 
-  if (STOPWATCH_SecondsSince(stateMachineStart) > APP_LISTEN_TIME_s && stateMachineListenOnly) {
+  if (stateMachineListenOnly) {
     stateMachineListenOnly = !BUTTON_Read(); // if the button is pressed (true) then set the listen only to false
   }
 
@@ -131,7 +142,7 @@ void StateRXListen(bool rxgood, bool rxerror, bool txgood) { // listen until the
     nextState = STATE_RXGOOD;
   } else if (rxerror) {
     nextState = STATE_RXERROR;
-  } else if (STOPWATCH_SecondsSince(stateMachineStart) > APP_LISTEN_TIME_s && !stateMachineListenOnly) {
+  } else if (!stateMachineListenOnly) {
     if (boardID == 0 || localData[0].packetCount >= APP_MIN_PACKET_TX) {
       nextState = STATE_RX;
     }
@@ -253,7 +264,7 @@ void StateTX(bool rxgood, bool rxerror, bool txgood) {
 
 void StateTXWait(bool rxgood, bool rxerror, bool txgood) {
   ENTRY {
-    STOPWATCH_ScheduleEventInSeconds((float)APP_TRANSMIT_PERIOD_s);
+    STOPWATCH_ScheduleEventInSeconds(APP_TRANSMIT_PERIOD_s);
   }
 
   if (txgood) {
@@ -307,6 +318,13 @@ void StateFatal(bool rxgood, bool rxerror, bool txgood) {
 
 
 void StateMachineStep(bool rxgood, bool rxerror, bool txgood) {
+  static bool firstEntry = true;
+  if (firstEntry) {
+    boardID = address[0];
+    my = &localData[boardID];
+    firstEntry = false;
+  }
+  
   lastState = currentState;
   currentState = nextState;
 

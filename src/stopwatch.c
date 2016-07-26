@@ -1,59 +1,32 @@
+/*
+ *    ||          ____  _ __
+ * +------+      / __ )(_) /_______________ _____  ___
+ * | 0xBC |     / __  / / __/ ___/ ___/ __ `/_  / / _ \
+ * +------+    / /_/ / / /_/ /__/ /  / /_/ / / /_/  __/
+ *  ||  ||    /_____/_/\__/\___/_/   \__,_/ /___/\___/
+ *
+ * LPS node firmware.
+ *
+ * Copyright 2016, Bitcraze AB
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Lesser General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * Foobar is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with the LPS Firmware.  If not, see <http://www.gnu.org/licenses/>.
+ */
+
 #include <stm32f0xx_hal.h>
 
 #include "stopwatch.h"
 #include "tim.h"
-
-//----------- CLOCK TICK BASED STOPWATCH. HAS NANOSECOND PRECISION ------------//
-
-// #define DEMCR_ENABLE (0x01000000)
-// #define DWTCTRL_ENABLE (0x00000001)
-//
-// void STOPWATCH_InitClock() {
-// 	// Enable TRC
-// 	CoreDebug->DEMCR &= ~DEMCR_ENABLE;
-// 	CoreDebug->DEMCR |= DEMCR_ENABLE;
-//
-// 	// Enable Counter
-// 	DWT->CTRL &= ~DWTCTRL_ENABLE;
-// 	DWT->CTRL |= DWTCTRL_ENABLE;
-//
-// 	STOPWATCH_ResetClock();
-// }
-//
-// void STOPWATCH_ResetClock() {
-// 	DWT->CYCCNT = 0;
-// }
-//
-// clockTicks_t STOPWATCH_GetClockTicks() {
-// 	return DWT->CYCCNT;
-// }
-//
-// float STOPWATCH_NanosecondsSince(clockTicks_t clock) {
-// 	uint32_t tickDiff = (uint32_t) STOPWATCH_GetClockTicks() - (uint32_t) clock;
-// 	float period_ns = 1e9f / SystemCoreClock;
-// 	float since_ns = tickDiff * period_ns;
-//
-// 	return since_ns;
-// }
-
-
-
-//----------- BASIC SYSTICK BASED STOPWATCH. ONLY HAS MILLISECOND PRECISION ------------//
-//
-// sysTime_t STOPWATCH_GetTicks() {
-// 	return HAL_GetTick();
-// }
-//
-// sysTime_t STOPWATCH_MillisecondsSince(sysTime_t start) {
-// 	sysTime_t diff = STOPWATCH_GetTicks() - start;
-// 	return diff;
-// }
-//
-// float STOPWATCH_SecondsSince(sysTime_t start) {
-// 	return (float) (STOPWATCH_MillisecondsSince(start)) / 1000.0f;
-// }
-
-
 
 //----------- TIMER BASED STOPWATCH FOR EVENTS -----------//
 
