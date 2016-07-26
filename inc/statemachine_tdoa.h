@@ -30,6 +30,11 @@
 
 #define SPEED_OF_LIGHT (299792458)
 #define TICKS_PER_SECOND (63897600000ULL)
+#define TICKS_PER_METER (213.139451293f)
+#define RFDELAY (32930)
+
+#define MASK_40 (0x000000FFFFFFFFFFULL)  // Time counter is 40 bits
+#define MASK_TX (0x000000FFFFFFFE00ULL)  // TX timestamp will snap to 8 ns resolution - mask lower 9 bits.
 
 //--------------- Application Constants ---------------//
 
@@ -115,7 +120,7 @@ typedef struct __attribute__((__packed__)) {
 } PacketRXData_t;
 
 typedef struct __attribute__((__packed__)) { // note the order of fields here is to minimize the amount of data that a TDOA client needs to read
-  int64_t sysTxTime;        // ---
+  int64_t txTime;           // ---
   float x, y, z;            //  | Needed for TDOA localization (and anchor sync & positioning)
   bool positionInitialized; // ---
   uint8_t senderID;         // ---

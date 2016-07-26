@@ -24,12 +24,14 @@
  */
 
 #include <assert.h>
-#include <statemachine_tdoa.h>
 #include <string.h>
+#include <math.h>
+
 #include "statemachine_tdoa.h"
+
+#include "config.h"
+#include "stopwatch.h"
 #include "libdw1000.h"
-#include "dw1000.h"
-#include "libdw1000Spi.h"
 
 // Disabling the LEDs
 #define LED_Register_RX()
@@ -48,8 +50,7 @@ extern dwDevice_t *dwm;
 #define UWB_ReceivedPacketLength() dwGetDataLength(dwm)
 
 #define UWB_ReceivedPacketData(rxPacket, packetLength) dwGetData(dwm, rxPacket, packetLength)
-#include "stopwatch.h"
-#include "config.h"
+
 
 static uint64_t UWB_LocalTime() {
   uint64_t timestamp = 0;
@@ -129,10 +130,10 @@ uint8_t boardID; //the anchor ID, read from the GPIO pins
 uint16_t boardPacketID;
 uint8_t rangingPartner;
 
-bool stateMachineListenOnly;
+int64_t nextTransmit_st;
+int64_t nextTransmit_lt;
 
 void StateEntry(bool rxgood, bool rxerror, bool txgood) {
-  stateMachineListenOnly = true;
   rangingPartner = 0;
   RXMODE = STATE_RXLISTEN;
   nextState = RXMODE;
@@ -144,15 +145,11 @@ void StateRXListen(bool rxgood, bool rxerror, bool txgood) { // listen until the
     UWB_RXEnable();
   }
 
-  if (stateMachineListenOnly) {
-    stateMachineListenOnly = !BUTTON_Read(); // if the button is pressed (true) then set the listen only to false
-  }
-
   if (rxgood) {
     nextState = STATE_RXGOOD;
   } else if (rxerror) {
     nextState = STATE_RXERROR;
-  } else if (!stateMachineListenOnly) {
+  } else {
     if (boardID == 0 || localData[0].packetCount >= APP_MIN_PACKET_TX) {
       nextState = STATE_RX;
     }
@@ -214,7 +211,7 @@ void StateRXGood(bool rxgood, bool rxerror, bool txgood)
   int64_t rounding = (rxPacket.txTime & (0x00000000000001FF));
 
   // calculate the desired receive time
-  int64_t rxTime = UWB_ReceivedPacketTime() + rounding; // convert the device time into local time
+  uint64_t rxTime = (UWB_LocalTime() + rounding) & MASK_40; // convert the device time into local time
 
   // enable the receiver such that we can receive the next packet while processing
   UWB_RXEnable();
@@ -238,13 +235,11 @@ void StateTX(bool rxgood, bool rxerror, bool txgood) {
   txPacket.packetID = boardPacketID;
   txPacket.systemOffset = my->systemOffset;
   txPacket.systemSkew = my->systemSkew;
-  txPacket.txTime = nextTransmit_lt;
-  txPacket.sysTxTime = UWB_TicksFromSeconds(nextTransmit_st);
+  txPacket.txTime = nextTransmit_st;
   txPacket.x = my->x;
   txPacket.y = my->y;
   txPacket.z = my->z;
   txPacket.positionInitialized = my->positionInitialized;
-  memcpy(&(txPacket.lastCommand), &lastCommand, sizeof(Command_t));
 
   // update the partners
   for(uint8_t i = 0; i<APP_ANCHOR_COUNT; i++) {
@@ -345,7 +340,34 @@ void StateMachineStep(bool rxgood, bool rxerror, bool txgood)
     {
       boardID = address[0] - 1;
       assert(boardID >= 0 && boardID < APP_ANCHOR_COUNT);
+    
+      memset(localData, 0, sizeof(localData));
+      
       my = &localData[boardID];
+      
+      // initialize the locally stored anchor data
+      for(int i=0; i<APP_ANCHOR_COUNT; i++)
+      {
+        AnchorInformation_t *anchor = &localData[i];
+        anchor->systemSkew = 0; // skew to the system clock
+        anchor->systemOffset = 0; // offset to the system clock
+        anchor->packetCount = 0;
+        anchor->positionInitialized = anchor->fixedX = anchor->fixedY = anchor->fixedZ = true;
+        anchor->x = positions[i+1][0]; // +1 since the anchorID starts at 1, but i starts at 0... legacy
+        anchor->y = positions[i+1][1]; // +1 since the anchorID starts at 1, but i starts at 0... legacy
+        anchor->z = positions[i+1][2]; // +1 since the anchorID starts at 1, but i starts at 0... legacy
+        anchor->X[0] = 0; // offset
+        anchor->X[1] = 1; // rate
+        anchor->ticksDistance = 0;
+  
+        if (i==boardID) {
+          continue; // no need to compute ticksDistance
+        }
+        
+        float distance = sqrtf(powf(my->x-anchor->x, 2) + powf(my->y-anchor->y, 2) + powf(my->z-anchor->z, 2));
+        anchor->ticksDistance = (uint32_t)(TICKS_PER_METER * distance + RFDELAY);
+      }
+      
       firstEntry = false;
     }
     
