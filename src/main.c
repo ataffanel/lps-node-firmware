@@ -27,6 +27,7 @@
 #include <stdio.h>
 
 #include "system.h"
+#include "tim.h"
 #include "spi.h"
 #include "i2c.h"
 #include "usart.h"
@@ -58,7 +59,7 @@ int initDwm1000();
 uint8_t address[8] = {0,0,0,0,0,0,0xcf,0xbc};
 uint8_t base_address[8] = {0,0,0,0,0,0,0xcf,0xbc};
 
-static float positions[][3] = {
+float positions[][3] = {
   {0,0,0},
   {4,0,0},
   {0,5,0},
@@ -73,30 +74,6 @@ float position[3];
 // Static system configuration
 #define MAX_ANCHORS 6
 uint8_t anchors[MAX_ANCHORS];
-
-typedef struct {
-  uint8_t pollRx[5];
-  uint8_t answerTx[5];
-  uint8_t finalRx[5];
-
-  float pressure;
-  float temperature;
-  float asl;
-  uint8_t pressure_ok;
-} __attribute__((packed)) reportPayload_t;
-
-typedef union timestamp_u {
-  uint8_t raw[5];
-  uint64_t full;
-  struct {
-    uint32_t low32;
-    uint8_t high8;
-  } __attribute__((packed));
-  struct {
-    uint8_t low8;
-    uint32_t high32;
-  } __attribute__((packed));
-} timestamp_t;
 
 const double C = 299792458.0;       // Speed of light
 const double tsfreq = 499.2e6 * 128;  // Timestamp counter frequency
@@ -163,6 +140,7 @@ int main() {
   SystemClock_Config();
 
   /* Initialize all configured peripherals */
+  MX_TIM2_Init();
   MX_GPIO_Init();
   MX_I2C1_Init();
   MX_USART1_UART_Init();
