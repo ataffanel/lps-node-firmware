@@ -25,6 +25,69 @@
 
 #include "statemachine_tdoa.h"
 #include "libdw1000.h"
+#include "dw1000.h"
+#include "libdw1000Spi.h"
+
+extern dwDevice_t *dwm;
+
+#define UWB_RXEnable() dwNewReceive(dwm); \
+    dwSetDefaults(dwm); \
+    dwInterruptOnReceiveFailed(dwm, true); \
+    dwSetReceiverAutoReenable(dwm, false); \
+    dwStartReceive(dwm)
+
+#define UWB_ReceivedPacketLength() dwGetDataLength(dwm)
+
+#define UWB_ReceivedPacketData(rxPacket, packetLength) dwGetData(dwm, rxPacket, packetLength)
+
+static uint64_t UWB_LocalTime() {
+  uint64_t timestamp = 0;
+	dwSpiRead(dwm, SYS_TIME, NO_SUB, &timestamp, LEN_SYS_TIME);
+  return timestamp;
+}
+
+double UWB_SecondsFromTicks(int64_t ticks) {
+	return (double) ticks / 128.0 / 499.2e6;
+}
+
+int64_t UWB_TicksFromSeconds(double seconds) {
+	return (int64_t) (seconds * 128.0 * 499.2e6);
+}
+
+static void setBit(uint8_t data[], unsigned int n, unsigned int bit, bool val) {
+	unsigned int idx;
+	unsigned int shift;
+
+	idx = bit / 8;
+	if(idx >= n) {
+		return; // TODO proper error handling: out of bounds
+	}
+	uint8_t* targetByte = &data[idx];
+	shift = bit % 8;
+	if(val) {
+		*targetByte |= (1<<shift);
+	} else {
+	  *targetByte &= ~(1<<shift);
+	}
+}
+
+static bool UWB_ScheduleMessage(uint64_t txTime, uint8_t *packet, uint8_t packetLength) {
+	setBit(dwm->sysctrl, LEN_SYS_CTRL, TXDLYS_BIT, true);
+  dwSpiWrite(dwm, DX_TIME, NO_SUB, &txTime, LEN_DX_TIME);
+
+  dwNewTransmit(dwm);
+  dwSetDefaults(dwm);
+  dwSetData(dwm, packet, packetLength);
+  dwStartTransmit(dwm);
+
+  uint8_t data;
+  dwSpiRead(dwm, SYS_STATUS_ID, 3, &data, 1);
+  bool HPDWARN = (data & 0x08) != 0;
+  if (HPDWARN) {
+    dwIdle(dwm);
+  }
+  return !HPDWARN;
+}
 
 State_t lastState = STATE_ENTRY;
 State_t currentState = STATE_ENTRY;
@@ -49,7 +112,7 @@ bool stateMachineListenOnly;
 void StateEntry(bool rxgood, bool rxerror, bool txgood) {
   stateMachineStart = STOPWATCH_GetTicks();
   stateMachineListenOnly = true;
-  
+
   RXMODE = STATE_RXLISTEN;
   nextState = RXMODE;
 }
@@ -59,11 +122,11 @@ void StateRXListen(bool rxgood, bool rxerror, bool txgood) { // listen until the
   ENTRY {
     UWB_RXEnable();
   }
-  
+
   if (STOPWATCH_SecondsSince(stateMachineStart) > APP_LISTEN_TIME_s && stateMachineListenOnly) {
     stateMachineListenOnly = !BUTTON_Read(); // if the button is pressed (true) then set the listen only to false
   }
-  
+
   if (rxgood) {
     nextState = STATE_RXGOOD;
   } else if (rxerror) {
@@ -88,15 +151,15 @@ void StateRX(bool rxgood, bool rxerror, bool txgood) {
     nextTransmit_st = floor(time_st / APP_SLICE_LENGTH_s) * APP_SLICE_LENGTH_s +
                       boardID * APP_TRANSMIT_PERIOD_s; // start of next slice, plus board TDMA slot
     double timeToTransmit_st = nextTransmit_st - time_st;
-    
+
     while (timeToTransmit_st < APP_TRANSMIT_BUFFER_MIN_s) { // if transmission is no longer possible in this round
       timeToTransmit_st += APP_SLICE_LENGTH_s; // try in the upcoming round
     }
-    
+
     // convert the system transmission time into local time
     nextTransmit_st = time_st + timeToTransmit_st;
     nextTransmit_lt = UWB_TicksFromSeconds(nextTransmit_st / (1 + my->systemSkew)) - my->systemOffset;
-    
+
     if (timeToTransmit_st < APP_TRANSMIT_BUFFER_MAX_s) { // if our transmission deadline is approaching
       nextState = STATE_TX;
       return;
@@ -104,7 +167,7 @@ void StateRX(bool rxgood, bool rxerror, bool txgood) {
       STOPWATCH_ScheduleEventInSeconds((float)(timeToTransmit_st-APP_TRANSMIT_BUFFER_MAX_s));
     }
   }
-  
+
   if (rxgood) {
     nextState = STATE_RXGOOD;
   } else if (rxerror) {
@@ -118,26 +181,26 @@ void StateRX(bool rxgood, bool rxerror, bool txgood) {
 void StateRXGood(bool rxgood, bool rxerror, bool txgood)
 {
   LED_Register_RX();
-  
+
   // read the packet length (already compensated for additional CRC)
   uint16_t packetLength = UWB_ReceivedPacketLength();
   assert(packetLength == sizeof(Packet_t));
-  
+
   // read the packet data
   UWB_ReceivedPacketData((uint8_t*)(&rxPacket), packetLength);
-  
+
   // rounding is the lowest 9 bits of the transmission timestamp
   int64_t rounding = (rxPacket.txTime & (0x00000000000001FF));
-  
+
   // calculate the desired receive time
-  int64_t rxTime = UWB_AdjustPreviousTimestamp(UWB_ReceivedPacketTime()) + rounding; // convert the device time into local time
-  
+  int64_t rxTime = UWB_ReceivedPacketTime() + rounding; // convert the device time into local time
+
   // enable the receiver such that we can receive the next packet while processing
   UWB_RXEnable();
-  
+
   // process the packet
   ProcessReceivedPacket(&rxPacket, &rxTime);
-  
+
   // transition states
   if (rxgood) { // if we've received a packet while processing, then come right back here!
     nextState = STATE_RXGOOD;
@@ -161,7 +224,7 @@ void StateTX(bool rxgood, bool rxerror, bool txgood) {
   txPacket.z = my->z;
   txPacket.positionInitialized = my->positionInitialized;
   memcpy(&(txPacket.lastCommand), &lastCommand, sizeof(Command_t));
-  
+
   // update the partners
   for(uint8_t i = 0; i<APP_ANCHOR_COUNT; i++) {
     if (localData[i].packetCount >= APP_MIN_PACKET_SYNC) { // we have received enough packets from this partner to be synced (hence the filteredRxTime is trustworthy)
@@ -176,9 +239,9 @@ void StateTX(bool rxgood, bool rxerror, bool txgood) {
       txPacket.rxPacket[i].bias = 0;
     }
   }
-  
+
   bool successfulTransmission = UWB_ScheduleMessage(nextTransmit_lt, (uint8_t *) (&txPacket), sizeof(txPacket));
-  
+
   if (successfulTransmission) {
     my->packetCount += 1;
     nextState = STATE_TXWAIT; // wait for confirmation from the interrupt
@@ -192,7 +255,7 @@ void StateTXWait(bool rxgood, bool rxerror, bool txgood) {
   ENTRY {
     STOPWATCH_ScheduleEventInSeconds((float)APP_TRANSMIT_PERIOD_s);
   }
-  
+
   if (txgood) {
     nextState = STATE_TXGOOD;
   } else if (STOPWATCH_EventHasOccurred()) { // the timer has finished without a transmission having occurred! timeout.
@@ -210,7 +273,7 @@ void StateTXGood(bool rxgood, bool rxerror, bool txgood) {
   packetLog.rxTime = 0;
   ARRAY_PUSH(packetLog, my->packetHistory, APP_PACKET_HISTORY);
   boardPacketID += 1;
-  
+
   LED_Register_TX();
   nextState = RXMODE;
 }
@@ -246,6 +309,6 @@ void StateFatal(bool rxgood, bool rxerror, bool txgood) {
 void StateMachineStep(bool rxgood, bool rxerror, bool txgood) {
   lastState = currentState;
   currentState = nextState;
-  
+
   StateFunction[currentState](rxgood, rxerror, txgood);
 }
