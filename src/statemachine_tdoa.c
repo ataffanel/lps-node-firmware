@@ -27,6 +27,7 @@
 #include <assert.h>
 #include <string.h>
 #include <math.h>
+#include <statemachine_tdoa.h>
 
 #include "statemachine_tdoa.h"
 
@@ -376,4 +377,56 @@ void StateMachineStep(bool rxgood, bool rxerror, bool txgood)
 
     StateFunction[currentState](rxgood, rxerror, txgood);
   }
+}
+
+
+void ProcessReceivedPacket(Packet_t *rxPacket, int64_t *rxTime)
+{
+  // Convenience definitions
+  uint8_t senderID = rxPacket->senderID;
+  assert(senderID != boardID);
+  AnchorInformation_t *their = &(localData[senderID]);
+    
+  // UPDATE THEIR LOCAL INFO
+  their->packetCount += 1;
+  
+  // Update their information
+  their->x = rxPacket->x;
+  their->y = rxPacket->y;
+  their->z = rxPacket->z;
+  their->positionInitialized = rxPacket->positionInitialized;
+  their->systemSkew = rxPacket->systemSkew;
+  their->systemOffset = rxPacket->systemOffset;
+  
+  // Log packet reception
+  PacketLogEntry_t packetLog;
+  packetLog.rxTime = *rxTime;
+  packetLog.txTime = rxPacket->txTime;
+  packetLog.senderID = rxPacket->senderID;
+  packetLog.packetID = rxPacket->packetID;
+  
+  uint8_t frontIdx = (uint8_t)((their->packetHistoryFrontIdx+1) % APP_PACKET_HISTORY);
+  memcpy(&(their->packetHistory[frontIdx]), &packetLog, sizeof(PacketLogEntry_t));
+  their->packetHistoryFrontIdx = frontIdx;
+  
+  
+  // TODO: Sync to their clock
+  if (senderID == 0) { // to begin, we'll only sync to anchor 0
+    if (their->packetCount>0) {
+      
+    }
+  }
+  
+  
+  // TODO: Calculate distance (both in ticks and meters) to sender
+
+  
+  // TODO: Update position gradients
+  
+  
+  // TODO: Initialize or update position
+  
+  
+  // TODO: Synchronize to global clock
+  
 }

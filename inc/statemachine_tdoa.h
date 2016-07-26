@@ -36,6 +36,7 @@
 #define MASK_40 (0x000000FFFFFFFFFFULL)  // Time counter is 40 bits
 #define MASK_TX (0x000000FFFFFFFE00ULL)  // TX timestamp will snap to 8 ns resolution - mask lower 9 bits.
 
+
 //--------------- Application Constants ---------------//
 
 #define APP_ANCHOR_COUNT   (6) // how many TDOA slots to allocate
@@ -50,6 +51,7 @@
 #define APP_MIN_PACKET_TX (1000) // how many packets do we need from id=0 before we start transmitting?
 #define APP_MIN_PACKET_SYNC (800) // how many packets do we need from them before we start incorporating their clock into the system clock?
 
+
 //--------------- Estimator Constants ---------------//
 
 #define DISTANCE_STEP_MAX (0.0001f)
@@ -60,6 +62,48 @@
 #define APP_MIN_PACKET_POS (1200)
 #define CLOCK_VAL_SS_VAR (7.358604e-06) // The steady state (calculated using the above two variances) variance of the clock's value after measurement update (P^\inf_m[0,0])
 #define CLOCK_RATE_SS_VAR (1.636265e-03) // The steady state (calculated using the above two variances) variance of the clock's rate after measurement update (P^\inf_m[1,1])
+
+
+//--------------- Data Defintions ---------------//
+
+typedef struct {
+  uint8_t senderID;
+  uint16_t packetID;
+  int64_t rxTime;
+  int64_t txTime;
+  int64_t sysTxTime;
+} PacketLogEntry_t;
+
+typedef struct {
+  uint64_t packetCount;
+  uint32_t ticksDistance;
+  double systemSkew; // holds the anchor's skew to the
+  int64_t systemOffset;
+  double X[3];
+  float x, y, z;
+  bool fixedX, fixedY, fixedZ;
+  bool positionInitialized;
+  PacketLogEntry_t packetHistory[APP_PACKET_HISTORY];
+  uint8_t packetHistoryFrontIdx;
+} AnchorInformation_t;
+
+typedef struct __attribute__((__packed__)) {
+  uint8_t senderID;
+  uint16_t packetID;
+	int64_t rxTime;
+} PacketRXData_t;
+
+typedef struct __attribute__((__packed__)) { // note the order of fields here is to minimize the amount of data that a TDOA client needs to read
+  int64_t txTime;           // ---
+  float x, y, z;            //  | Needed for TDOA localization (and anchor sync & positioning)
+  bool positionInitialized; // ---
+  uint8_t senderID;         // ---
+  uint16_t packetID;        //  |
+  double systemSkew;        //  | Not needed for TDOA localization, but needed for anchor sync and anchor positioning
+  int64_t systemOffset;     //  |
+  PacketRXData_t rxPacket;  // ---
+} Packet_t;
+
 
 //--------------- State Machine Definitions ---------------//
 
@@ -90,45 +134,7 @@ void StateTXError(bool rxgood, bool rxerror, bool txgood);
 
 void StateTXTimeout(bool rxgood, bool rxerror, bool txgood);
 
-//--------------- Data Defintions ---------------//
-
-typedef struct {
-  uint8_t senderID;
-  uint16_t packetID;
-  int64_t rxTime;
-  int64_t txTime;
-  int64_t sysTxTime;
-} PacketLogEntry_t;
-
-typedef struct {
-  uint64_t packetCount;
-  uint32_t ticksDistance;
-  double systemSkew;
-  int64_t systemOffset;
-  double X[3];
-  float x, y, z;
-  bool fixedX, fixedY, fixedZ;
-  bool positionInitialized;
-  PacketLogEntry_t packetHistory[APP_PACKET_HISTORY];
-  uint8_t packetHistoryFrontIdx;
-} AnchorInformation_t;
-
-typedef struct __attribute__((__packed__)) {
-  uint8_t senderID;
-  uint16_t packetID;
-	int64_t rxTime;
-} PacketRXData_t;
-
-typedef struct __attribute__((__packed__)) { // note the order of fields here is to minimize the amount of data that a TDOA client needs to read
-  int64_t txTime;           // ---
-  float x, y, z;            //  | Needed for TDOA localization (and anchor sync & positioning)
-  bool positionInitialized; // ---
-  uint8_t senderID;         // ---
-  uint16_t packetID;        //  |
-  double systemSkew;        //  | Not needed for TDOA localization, but needed for anchor sync and anchor positioning
-  int64_t systemOffset;     //  |
-  PacketRXData_t rxPacket;  // ---
-} Packet_t;
+void ProcessReceivedPacket(Packet_t *rxPacket, int64_t *rxTime);
 
 
 //--------------- SHARED DATA -----------------//
