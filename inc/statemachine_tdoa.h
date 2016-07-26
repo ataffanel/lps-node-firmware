@@ -131,7 +131,7 @@ typedef struct __attribute__((__packed__)) { // note the order of fields here is
 extern Packet_t txPacket;
 extern Packet_t rxPacket;
 
-extern AnchorInformation_t localData[APP_ANCHOR_COUNT+1]; // +1 for boardID starting from 1...
+extern AnchorInformation_t localData[APP_ANCHOR_COUNT];
 extern AnchorInformation_t *my;
 
 extern uint8_t boardID; //the anchor ID, read from the GPIO pins

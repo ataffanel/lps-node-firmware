@@ -23,6 +23,9 @@
  * along with the LPS Firmware.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include <assert.h>
+#include <statemachine_tdoa.h>
+#include <string.h>
 #include "statemachine_tdoa.h"
 #include "libdw1000.h"
 #include "dw1000.h"
@@ -124,12 +127,13 @@ AnchorInformation_t *my;
 
 uint8_t boardID; //the anchor ID, read from the GPIO pins
 uint16_t boardPacketID;
+uint8_t rangingPartner;
 
 bool stateMachineListenOnly;
 
 void StateEntry(bool rxgood, bool rxerror, bool txgood) {
   stateMachineListenOnly = true;
-
+  rangingPartner = 0;
   RXMODE = STATE_RXLISTEN;
   nextState = RXMODE;
 }
@@ -244,16 +248,27 @@ void StateTX(bool rxgood, bool rxerror, bool txgood) {
 
   // update the partners
   for(uint8_t i = 0; i<APP_ANCHOR_COUNT; i++) {
-    if (localData[i].packetCount >= APP_MIN_PACKET_SYNC) { // we have received enough packets from this partner to be synced (hence the filteredRxTime is trustworthy)
-      txPacket.rxPacket[i].packetID = localData[i].packetHistory[0].packetID;
-      txPacket.rxPacket[i].filteredRxTime = localData[i].packetHistory[0].filteredRxTime;
-      txPacket.rxPacket[i].ticksDistanceTimes16 = (uint16_t)UWB_TicksFromSeconds(16*localData[i].timeDistance); // this fits for distances less than 18m
-      txPacket.rxPacket[i].bias = (uint16_t)(32767*localData[i].bias); // for biases less than 1m, this fits and gives a resolution of 0.03mm.
-    } else {
-      txPacket.rxPacket[i].packetID = 0;
-      txPacket.rxPacket[i].filteredRxTime = 0;
-      txPacket.rxPacket[i].ticksDistanceTimes16 = 0;
-      txPacket.rxPacket[i].bias = 0;
+    uint8_t testPartner = (uint8_t)((rangingPartner + i) % APP_ANCHOR_COUNT);
+    
+    if (testPartner == boardID) {
+      continue; // don't retransmit our own packets
+    }
+
+    if (localData[testPartner].packetCount >= APP_MIN_PACKET_SYNC) {
+      // we have received enough packets from this partner to be synced (hence the filteredRxTime is trustworthy)
+      rangingPartner = testPartner;
+      txPacket.rxPacket.senderID = rangingPartner;
+      txPacket.rxPacket.packetID = localData[rangingPartner].packetHistory[0].packetID;
+      txPacket.rxPacket.rxTime = localData[rangingPartner].packetHistory[0].rxTime;
+      break;
+    } else if (i==APP_ANCHOR_COUNT-1) {
+      // if we find no partners (i.e. have received no packets from anyone)
+      // we reach this statement only if we are testing the last partner, and have not received any packets
+      txPacket.rxPacket.senderID = 0xFF;
+      txPacket.rxPacket.packetID = 0;
+      txPacket.rxPacket.rxTime = 0;
+      // transmit a packet which nobody is interested in (since they check for senderID)
+      break;
     }
   }
 
@@ -261,6 +276,7 @@ void StateTX(bool rxgood, bool rxerror, bool txgood) {
 
   if (successfulTransmission) {
     my->packetCount += 1;
+    rangingPartner = (uint8_t)((rangingPartner + 1) % APP_ANCHOR_COUNT); // increase the ranging partner for next time
     nextState = STATE_TXWAIT; // wait for confirmation from the interrupt
   } else {
     nextState = STATE_TXERROR; // otherwise there was no time to transmit
@@ -288,7 +304,10 @@ void StateTXGood(bool rxgood, bool rxerror, bool txgood) {
   packetLog.packetID = txPacket.packetID;
   packetLog.txTime = txPacket.txTime;
   packetLog.rxTime = 0;
-  ARRAY_PUSH(packetLog, my->packetHistory, APP_PACKET_HISTORY);
+  
+  int8_t frontIdx = (my->packetHistoryFrontIdx + 1)%APP_PACKET_HISTORY;
+  memcpy(&my->packetHistory[frontIdx], &packetLog, sizeof(PacketLogEntry_t));
+  my->packetHistoryFrontIdx = frontIdx;
   boardPacketID += 1;
 
   LED_Register_TX();
@@ -317,16 +336,22 @@ void StateTXTimeout(bool rxgood, bool rxerror, bool txgood) {
   nextState = RXMODE;
 }
 
-void StateMachineStep(bool rxgood, bool rxerror, bool txgood) {
+void StateMachineStep(bool rxgood, bool rxerror, bool txgood)
+{
   static bool firstEntry = true;
-  if (firstEntry) {
-    boardID = address[0];
-    my = &localData[boardID];
-    firstEntry = false;
+  if (address[0] > 0)
+  {
+    if (firstEntry)
+    {
+      boardID = address[0] - 1;
+      assert(boardID >= 0 && boardID < APP_ANCHOR_COUNT);
+      my = &localData[boardID];
+      firstEntry = false;
+    }
+    
+    lastState = currentState;
+    currentState = nextState;
+    
+    StateFunction[currentState](rxgood, rxerror, txgood);
   }
-
-  lastState = currentState;
-  currentState = nextState;
-
-  StateFunction[currentState](rxgood, rxerror, txgood);
 }
