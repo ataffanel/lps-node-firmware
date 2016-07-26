@@ -243,18 +243,18 @@ int main() {
   ledOff(ledSync);
   ledOff(ledMode);
 
-  dwTime_t delay = {.full = ANTENNA_DELAY/2};
-  dwSetAntenaDelay(dwm, delay);
-
   dwAttachSentHandler(dwm, txcallback);
   dwAttachReceivedHandler(dwm, rxcallback);
   dwAttachReceiveFailedHandler(dwm, rxFailedCallback);
 
   dwNewConfiguration(dwm);
   dwSetDefaults(dwm);
+  dwInterruptOnReceiveFailed(dwm, true);
+  dwSetReceiverAutoReenable(dwm, false);
   dwEnableMode(dwm, MODE_SHORTDATA_FAST_ACCURACY);
   dwSetChannel(dwm, CHANNEL_2);
   dwSetPreambleCode(dwm, PREAMBLE_CODE_64MHZ_9);
+
 
   dwCommitConfiguration(dwm);
 
@@ -262,16 +262,6 @@ int main() {
   printf("SYSTEM\t: Press 'h' for help.\r\n");
 
   usbcommSetSystemStarted(true);
-
-  // Initialize the packet in the TX buffer
-  // MAC80215_PACKET_INIT(txPacket, MAC802154_TYPE_DATA);
-  // txPacket.pan = 0xbccf;
-
-  if (mode == modeAnchor || mode == modeSniffer) {
-    dwNewReceive(dwm);
-    dwSetDefaults(dwm);
-    dwStartReceive(dwm);
-  }
 
   bool ledState = false;
   uint32_t ledTick = 0;
